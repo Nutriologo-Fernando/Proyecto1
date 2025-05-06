@@ -45,9 +45,9 @@ async function connectDB() {
 
 // Productos disponibles
 const productDatabase = [
-    { id: 1, name: "Consulta Nutricional Clinica", price: 1500.00 },
-    { id: 2, name: "Consulta Nutricional Deportiva", price: 1500.00 },
-    { id: 3, name: "Consulta On-Line", price: 1200.00 }
+    { id: 1, name: "Consulta Nutricional Clinica", price: 20.00 },
+    { id: 2, name: "Consulta Nutricional Deportiva", price: 20.00 },
+    { id: 3, name: "Consulta On-Line", price: 20.00 }
 ];
 
 // -------------------- LOGIN --------------------
