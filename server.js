@@ -108,6 +108,19 @@ app.get('/bioquimicos/:folio', async (req, res) => {
     }
 });
 
+app.get('/plan_nutricional/:folio', async (req, res) => {
+    const { folio } = req.params;
+    try {
+        const connection = await mysql.createConnection(dbConfig);
+        const [results] = await connection.execute('SELECT * FROM bioquimicos WHERE folio = ?', [folio]);
+        await connection.end();
+        res.json({ success: results.length > 0, data: results });
+    } catch (err) {
+        console.error('Error en bioquímicos:', err);
+        res.status(500).json({ success: false, message: 'Error en el servidor' });
+    }
+});
+
 // -------------------- PAYPAL ORDEN --------------------
 app.post('/api/orders', async (req, res) => {
     console.log("🛒 Nueva orden recibida:", req.body);
