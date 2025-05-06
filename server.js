@@ -112,11 +112,11 @@ app.get('/plan_nutricional/:folio', async (req, res) => {
     const { folio } = req.params;
     try {
         const connection = await mysql.createConnection(dbConfig);
-        const [results] = await connection.execute('SELECT * FROM bioquimicos WHERE folio = ?', [folio]);
+        const [results] = await connection.execute('SELECT * FROM plan_nutricional WHERE folio = ?', [folio]);
         await connection.end();
         res.json({ success: results.length > 0, data: results });
     } catch (err) {
-        console.error('Error en bioquímicos:', err);
+        console.error('Error en plan_nutricional:', err);
         res.status(500).json({ success: false, message: 'Error en el servidor' });
     }
 });
