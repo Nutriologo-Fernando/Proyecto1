@@ -15,7 +15,7 @@ const client = new paypal.core.PayPalHttpClient(environment);
 
 // Middleware
 app.use(cors({
-    origin: ['https://forestgreen-jellyfish-805408.hostingersite.com', 'https://www.paypal.com'],
+    origin: ['https://forestgreen-jellyfish-805408.hostingersite.com', 'https://www.paypal.com', 'https://carro-3.onrender.com'],
     methods: ['GET', 'POST'],
     credentials: true
 }));
@@ -29,25 +29,23 @@ const dbConfig = {
     database: process.env.DB_NAME_LOGIN
 };
 
-// Función para establecer conexión con la base de datos
 async function connectDB() {
     try {
-      const connection = await mysql.createConnection(dbConfig);
-      console.log("Conectado a la base de datos correctamente");
-      return connection;
+        const connection = await mysql.createConnection(dbConfig);
+        console.log("Conectado a la base de datos correctamente");
+        return connection;
     } catch (error) {
-      console.error("Error de conexión:", error);
-      throw error;
+        console.error("Error de conexión:", error);
+        throw error;
     }
-  }
-  // Llamar a la función para establecer la conexión
-  connectDB();
+}
+connectDB();
 
 // Productos disponibles
 const productDatabase = [
     { id: 1, name: "Consulta Nutricional Clinica", price: 20.00 },
     { id: 2, name: "Consulta Nutricional Deportiva", price: 20.00 },
-    { id: 3, name: "Consulta On-Line", price: 20.00 }
+    { id: 3, name: "Consulta On-Line", price: 20.00 },
 ];
 
 // -------------------- LOGIN --------------------
@@ -110,35 +108,29 @@ app.get('/bioquimicos/:folio', async (req, res) => {
     }
 });
 
-app.get('/plan_nutricional/:folio', async (req, res) => {
-    const { folio } = req.params;
-    try {
-        const connection = await mysql.createConnection(dbConfig);
-        const [results] = await connection.execute('SELECT * FROM plan_nutricional WHERE folio = ?', [folio]);
-        await connection.end();
-        res.json({ success: results.length > 0, data: results });
-    } catch (err) {
-        console.error('Error en plan nutricional:', err);
-        res.status(500).json({ success: false, message: 'Error en el servidor' });
-    }
-});
-
-// -------------------- CARRITO --------------------
+// -------------------- PAYPAL ORDEN --------------------
 app.post('/api/orders', async (req, res) => {
+    console.log("🛒 Nueva orden recibida:", req.body);
     const { cart, cliente } = req.body;
 
-    if (!cart?.length || !cliente?.nombre || !cliente?.email) {
-        return res.status(400).json({ error: "Datos incompletos" });
+    if (!cart || cart.length === 0) return res.status(400).json({ error: "El carrito está vacío" });
+    if (!cliente || !cliente.nombre || !cliente.email || !cliente.calle || !cliente.numero || !cliente.colonia || !cliente.ciudad || !cliente.codigo) {
+        return res.status(400).json({ error: "Datos del cliente incompletos" });
     }
 
-    let total = 0;
+    console.log("📦 Datos del Cliente:", cliente);
+    let totalBackend = 0;
+
     for (const item of cart) {
         const product = productDatabase.find(p => p.id === item.id);
-        if (!product || product.price !== Number(item.price)) {
-            return res.status(400).json({ error: `Producto inválido: ${item.name}` });
+        if (!product) return res.status(400).json({ error: `Producto no encontrado: ${item.name}` });
+        if (Number(item.price) !== product.price) {
+            return res.status(400).json({ error: `Precio inválido para ${item.name}. Esperado: ${product.price}, Recibido: ${item.price}` });
         }
-        total += product.price * item.quantity;
+        totalBackend += product.price * item.quantity;
     }
+
+    totalBackend = totalBackend.toFixed(2);
 
     const request = new paypal.orders.OrdersCreateRequest();
     request.requestBody({
@@ -146,12 +138,14 @@ app.post('/api/orders', async (req, res) => {
         purchase_units: [{
             amount: {
                 currency_code: 'MXN',
-                value: total.toFixed(2),
-                breakdown: { item_total: { currency_code: 'MXN', value: total.toFixed(2) } }
+                value: totalBackend,
+                breakdown: {
+                    item_total: { currency_code: 'MXN', value: totalBackend }
+                },
             },
             items: cart.map(item => ({
                 name: item.name,
-                unit_amount: { currency_code: 'MXN', value: item.price.toFixed(2) },
+                unit_amount: { currency_code: 'MXN', value: Number(item.price).toFixed(2) },
                 quantity: item.quantity.toString(),
             }))
         }]
@@ -159,55 +153,74 @@ app.post('/api/orders', async (req, res) => {
 
     try {
         const order = await client.execute(request);
-        const orderId = order.result.id;
+        console.log("✅ Orden creada con éxito:", order.result.id);
 
-        await db.guardarOrden({
+        const orderId = order.result.id;
+        const orderData = {
             order_id: orderId,
-            total,
+            total: totalBackend,
             cliente_nombre: cliente.nombre,
             cliente_email: cliente.email,
             cliente_direccion: `${cliente.calle} ${cliente.numero}, ${cliente.colonia}, ${cliente.ciudad}, ${cliente.codigo}`,
             status: 'CREATED'
-        });
+        };
+
+        const result = await db.guardarOrden(orderData);
+        console.log("✅ Orden guardada en la base de datos:", result);
 
         await db.guardarDetallesOrden(orderId, cart);
-        await db.guardarCliente({
+        console.log("✅ Detalles de la orden guardados correctamente.");
+
+        const clienteData = {
             order_id: orderId,
             nombre: cliente.nombre,
             email: cliente.email,
             telefono: cliente.telefono,
             direccion: `${cliente.calle} ${cliente.numero}, ${cliente.colonia}, ${cliente.ciudad}, ${cliente.codigo}`
-        });
+        };
+        await db.guardarCliente(clienteData);
+        console.log("✅ Datos del cliente guardados correctamente.");
 
         res.status(200).json({ id: orderId });
     } catch (err) {
-        console.error("Error creando orden:", err);
-        res.status(500).json({ error: "Error creando orden", details: err.message });
+        console.error("❌ Error al crear la orden:", err);
+        res.status(500).json({ error: "Error al crear la orden", details: err.message });
     }
 });
 
 app.post('/api/orders/:orderId/capture', async (req, res) => {
     const { orderId } = req.params;
+    console.log("🔍 Capturando pago para Order ID:", orderId);
     try {
+        const orderDetails = await client.execute(new paypal.orders.OrdersGetRequest(orderId));
+        if (orderDetails.result.status === 'COMPLETED') {
+            console.log("✅ Pago ya fue capturado previamente:", orderDetails.result);
+            return res.status(200).json({ message: "Pago ya fue capturado previamente", result: orderDetails.result });
+        }
+
         const request = new paypal.orders.OrdersCaptureRequest(orderId);
         const capture = await client.execute(request);
+        console.log("✅ Pago confirmado:", capture.result);
 
-        await db.actualizarEstadoOrden(orderId, 'COMPLETED');
+        const result = await db.actualizarEstadoOrden(orderId, 'COMPLETED');
+        console.log("✅ Orden actualizada en la base de datos:", result);
 
         const cliente = await db.obtenerClientePorOrderId(orderId);
         const cart = await db.obtenerDetallesOrden(orderId);
+
         await enviarCorreoConfirmacion(cliente, orderId, cart);
+        console.log("📧 Correo de confirmación enviado a:", cliente.email);
 
         res.status(200).json(capture.result);
     } catch (err) {
-        console.error("Error capturando orden:", err);
-        res.status(500).json({ error: "Error capturando orden", details: err.message });
+        console.error("❌ Error al capturar la orden:", err);
+        res.status(500).json({ error: "Error al capturar la orden", details: err.message });
     }
 });
 
-// -------------------- START SERVER --------------------
+// 🚀 Iniciar servidor
 app.listen(port, () => {
-    console.log(`🚀 Servidor unificado escuchando en http://localhost:${port}`);
+    console.log(`🚀 Servidor en ejecución en http://localhost:${port} eres la mera pistola`);
 });
 
 
