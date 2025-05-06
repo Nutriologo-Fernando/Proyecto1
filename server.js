@@ -15,7 +15,7 @@ const client = new paypal.core.PayPalHttpClient(environment);
 
 // Middleware
 app.use(cors({
-    origin: ['forestgreen-jellyfish-805408.hostingersite.com', 'https://www.paypal.com'],
+    origin: ['https://forestgreen-jellyfish-805408.hostingersite.com', 'https://www.paypal.com'],
     methods: ['GET', 'POST'],
     credentials: true
 }));
